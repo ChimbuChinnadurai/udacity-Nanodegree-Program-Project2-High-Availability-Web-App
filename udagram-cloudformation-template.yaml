@@ -75,8 +75,8 @@ Resources:
       LoadBalancerNames:
         - !Ref UdagramELB
       LaunchConfigurationName: !Ref UdagramLaunchConfig
-      MinSize: '1'
-      MaxSize: '1'
+      MinSize: '2'
+      MaxSize: '5'
 
   UdagramEc2Role:
     Type: AWS::IAM::Role
