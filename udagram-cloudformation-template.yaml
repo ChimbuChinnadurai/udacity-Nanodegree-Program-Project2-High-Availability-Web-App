@@ -1,0 +1,164 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS cloudformation template for the Udagram Application
+
+Parameters:
+  VpcId:
+    Description: Id of the VPC where the resouces will be created
+    Type: AWS::EC2::VPC::Id
+
+  PrivateSubnet:
+    Description: This is the subnet where the web servers will be launched
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateSubnetCidrIp:
+    Description: CIDR of the private subnet
+    Type: String
+    Default: 172.31.0.0/20
+
+  PublicSubnet:
+    Description: This is the subnet where the bastion host will be launched
+    Type: AWS::EC2::Subnet::Id
+
+  PublicSubnetCidrIp:
+    Description: CIDR of the private subnet
+    Type: String
+    Default: 172.31.16.0/20
+
+  ImageId:
+    Description: Ubuntu 18 Image id
+    Type: String
+    Default: ami-00f6a0c18edb19300
+
+  InstanceType:
+    Description: EC2 Instance Type
+    Type: String
+    Default: t3.small
+
+Resources:
+  UdagramLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: 'False'
+      ImageId: !Ref 'ImageId'
+      SecurityGroups:
+        - !Ref 'UdagramEc2SecurityGroup'
+      InstanceType: !Ref 'InstanceType'
+      IamInstanceProfile: !Ref 'UdagramInstanceProfile'
+      BlockDeviceMappings:
+        - Ebs:
+            VolumeSize: 10
+            VolumeType: gp2
+            DeleteOnTermination: true
+          DeviceName: /dev/xvdcz
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt-get update -y
+          apt-get install unzip awscli -y
+          apt-get install apache2 -y
+          systemctl start apache2.service
+          cd /var/www/html
+          aws s3 cp s3://udacity-demo-1/udacity.zip .
+          unzip -o udacity.zip
+
+  UdagramInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref UdagramEc2Role
+  
+  UdagramAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: 
+        - !Ref PrivateSubnet
+      LoadBalancerNames:
+        - !Ref UdagramELB
+      LaunchConfigurationName: !Ref UdagramLaunchConfig
+      MinSize: '1'
+      MaxSize: '1'
+
+  UdagramEc2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: Ec2ReadS3Code
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::udacity-demo-1/*
+                  - !Sub arn:aws:s3:::udacity-demo-1
+                Effect: Allow
+  
+  UdagramEc2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: UdagramEc2SecurityGroup
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: UdagramEc2SecurityGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          CidrIp: !Ref PublicSubnetCidrIp
+          FromPort: '22'
+          ToPort: '22'
+        - IpProtocol: tcp
+          CidrIp: !Ref PublicSubnetCidrIp
+          FromPort: '80'
+          ToPort: '80'
+
+  UdagramELB:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      CrossZone: 'true'
+      Subnets: 
+        - !Ref PublicSubnet
+      SecurityGroups:
+        - !Ref 'UdagramELBSecurityGroup'
+      Listeners:
+        - LoadBalancerPort: '80'
+          InstancePort: '80'
+          InstanceProtocol: HTTP
+          Protocol: HTTP
+      HealthCheck:
+        Target: HTTP:80/
+        HealthyThreshold: '3'
+        UnhealthyThreshold: '5'
+        Interval: '30'
+        Timeout: '5'
+
+  UdagramELBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: UdagramELBSecurityGroup
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: UdagramELBSecurityGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          FromPort: '80'
+          ToPort: '80'
+
+Outputs:
+  LoadBalancerUrl:
+    Description: The URL of the Loadbalancer
+    Value: !Join ['http://', [!GetAtt UdagramELB.DNSName]]
