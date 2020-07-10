@@ -14,7 +14,6 @@ Parameters:
   PrivateSubnetCidrIp:
     Description: CIDR of the private subnet
     Type: String
-    Default: 172.31.0.0/20
 
   PublicSubnet:
     Description: This is the subnet where the bastion host will be launched
@@ -23,7 +22,6 @@ Parameters:
   PublicSubnetCidrIp:
     Description: CIDR of the private subnet
     Type: String
-    Default: 172.31.16.0/20
 
   ImageId:
     Description: Ubuntu 18 Image id
